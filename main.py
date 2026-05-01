@@ -20,10 +20,9 @@ GUILDS = [discord.Object(id=g) for g in GUILD_IDS]
 DB_PATH = "bot.db"
 
 # =========================
-# 🧱 数据库初始化（修正版）
+# 🧱 数据库初始化（修正版，按服务器隔离）
 # =========================
 async def init_db():
-    
     async with aiosqlite.connect(DB_PATH) as db:
 
         # =========================
@@ -32,6 +31,7 @@ async def init_db():
         await db.execute("""
         CREATE TABLE IF NOT EXISTS codes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER,
             game TEXT,
             code TEXT,
             used INTEGER DEFAULT 0
@@ -44,6 +44,7 @@ async def init_db():
         await db.execute("""
         CREATE TABLE IF NOT EXISTS claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER,
             user_id INTEGER,
             game TEXT,
             code TEXT
@@ -55,7 +56,9 @@ async def init_db():
         # =========================
         await db.execute("""
         CREATE TABLE IF NOT EXISTS games (
-            name TEXT PRIMARY KEY
+            guild_id INTEGER,
+            name TEXT,
+            PRIMARY KEY (guild_id, name)
         )
         """)
 
@@ -65,6 +68,7 @@ async def init_db():
         await db.execute("""
         CREATE TABLE IF NOT EXISTS panel (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER,
             title TEXT,
             message_id INTEGER,
             channel_id INTEGER,
@@ -73,11 +77,12 @@ async def init_db():
         """)
 
         # =========================
-        # ⭐ FIX HERE (你缺的就是这个)
+        # panel_buttons
         # =========================
         await db.execute("""
         CREATE TABLE IF NOT EXISTS panel_buttons (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER,
             message_id INTEGER,
             channel_id INTEGER,
             label TEXT,
@@ -91,8 +96,10 @@ async def init_db():
         # =========================
         await db.execute("""
         CREATE TABLE IF NOT EXISTS dm_text (
-            game TEXT PRIMARY KEY,
-            text TEXT
+            guild_id INTEGER,
+            game TEXT,
+            text TEXT,
+            PRIMARY KEY (guild_id, game)
         )
         """)
 
@@ -101,9 +108,9 @@ async def init_db():
 # =========================
 # 🎮 游戏列表
 # =========================
-async def get_games():
+async def get_games(guild_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT name FROM games") as c:
+        async with db.execute("SELECT name FROM games WHERE guild_id=?", (guild_id,)) as c:
             rows = await c.fetchall()
             return [r[0] for r in rows]
 
@@ -126,11 +133,19 @@ class StartView(discord.ui.View):
         custom_id="start_btn"
     )
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
-        games = await get_games()
+        guild_id = interaction.guild.id  # 获取当前服务器ID
+        games = await get_games(guild_id)  # 按服务器获取游戏
         if not games:
-            await interaction.response.send_message("❌ No games available.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ No games available for this server.", 
+                ephemeral=True
+            )
             return
-        await interaction.response.send_message("🎮 Choose your game:", view=GameView(games), ephemeral=True)
+        await interaction.response.send_message(
+            "🎮 Choose your game:", 
+            view=GameView(games), 
+            ephemeral=True
+        )
 
 # =========================
 # Game View
@@ -206,13 +221,19 @@ async def add_game(interaction: discord.Interaction, name: str):
     )
 
 # =========================
-# 🎁 上传礼品码
+# 🎁 上传礼品码（按服务器隔离）
 # =========================
 class UploadModal(discord.ui.Modal, title="Upload Game Codes"):
-    codes_text = discord.ui.TextInput(label="Enter codes (one per line)", style=discord.TextStyle.paragraph, required=True, max_length=2000)
+    codes_text = discord.ui.TextInput(
+        label="Enter codes (one per line)",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=2000
+    )
 
-    def __init__(self, game: str):
+    def __init__(self, guild_id: int, game: str):
         super().__init__()
+        self.guild_id = guild_id
         self.game = game
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -220,23 +241,30 @@ class UploadModal(discord.ui.Modal, title="Upload Game Codes"):
         count = 0
         async with aiosqlite.connect(DB_PATH) as db:
             for code in codes:
-                await db.execute("INSERT INTO codes (game, code) VALUES (?, ?)", (self.game, code))
+                await db.execute(
+                    "INSERT INTO codes (guild_id, game, code) VALUES (?, ?, ?)",
+                    (self.guild_id, self.game, code)
+                )
                 count += 1
             await db.commit()
-        await interaction.response.send_message(f"✅ Uploaded {count} codes for **{self.game}**", ephemeral=True)
+        await interaction.response.send_message(
+            f"✅ Uploaded {count} codes for **{self.game}**",
+            ephemeral=True
+        )
 
 class UploadSelect(discord.ui.Select):
-    def __init__(self, games):
+    def __init__(self, guild_id: int, games: list[str]):
+        self.guild_id = guild_id
         options = [discord.SelectOption(label=g) for g in games]
         super().__init__(placeholder="Choose a game to upload codes", options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(UploadModal(self.values[0]))
+        await interaction.response.send_modal(UploadModal(self.guild_id, self.values[0]))
 
 class UploadView(discord.ui.View):
-    def __init__(self, games):
+    def __init__(self, guild_id: int, games: list[str]):
         super().__init__(timeout=60)
-        self.add_item(UploadSelect(games))
+        self.add_item(UploadSelect(guild_id, games))
 
 @bot.tree.command(
     name="upload",
@@ -245,17 +273,18 @@ class UploadView(discord.ui.View):
 )
 @app_commands.check(admin_only)
 async def upload(interaction: discord.Interaction):
-    games = await get_games()
+    guild_id = interaction.guild.id
+    games = await get_games(guild_id)
     if not games:
         await interaction.response.send_message(
-            "❌ No games added yet.",
+            "❌ No games added yet for this server.",
             ephemeral=True
         )
         return
 
     await interaction.response.send_message(
         "Select a game to upload codes:",
-        view=UploadView(games),
+        view=UploadView(guild_id, games),
         ephemeral=True
     )
 
@@ -268,23 +297,25 @@ async def upload(interaction: discord.Interaction):
     guilds=GUILDS
 )
 async def stock(interaction: discord.Interaction):
+    guild_id = interaction.guild.id  # 当前服务器
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT name FROM games") as c:
+        # 获取本服务器的游戏列表
+        async with db.execute("SELECT name FROM games WHERE guild_id=?", (guild_id,)) as c:
             games = await c.fetchall()
 
         if not games:
             await interaction.response.send_message(
-                "📦 No games found.",
+                "📦 No games found for this server.",
                 ephemeral=True
             )
             return
 
-        msg = "📦 Stock (unused codes):\n"
+        msg = "📦 Stock (unused codes) for this server:\n"
 
         for g, in games:
             async with db.execute(
-                "SELECT COUNT(*) FROM codes WHERE game=? AND used=0",
-                (g,)
+                "SELECT COUNT(*) FROM codes WHERE guild_id=? AND game=? AND used=0",
+                (guild_id, g)
             ) as c2:
                 count = (await c2.fetchone())[0]
             msg += f"{g}: {count}\n"
@@ -927,10 +958,14 @@ class EditDMSelect(discord.ui.Select):
         options = [discord.SelectOption(label=g) for g in games]
         super().__init__(placeholder="Select a game to edit DM text", options=options)
 
-    async def callback(self, interaction):
+    async def callback(self, interaction: discord.Interaction):
         game = self.values[0]
+        guild_id = interaction.guild.id
         async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT text FROM dm_text WHERE game=?", (game,)) as c:
+            async with db.execute(
+                "SELECT text FROM dm_text WHERE guild_id=? AND game=?",
+                (guild_id, game)
+            ) as c:
                 row = await c.fetchone()
         old_text = row[0] if row else "{code}"
         await interaction.response.send_modal(EditDMModal(game, old_text))
@@ -943,11 +978,18 @@ class EditDMModal(discord.ui.Modal, title="Edit DM Text"):
         self.game = game
         self.text_input.default = old_text
 
-    async def on_submit(self, interaction):
+    async def on_submit(self, interaction: discord.Interaction):
+        guild_id = interaction.guild.id
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("INSERT OR REPLACE INTO dm_text (game,text) VALUES (?,?)", (self.game,self.text_input.value))
+            await db.execute(
+                "INSERT OR REPLACE INTO dm_text (guild_id, game, text) VALUES (?, ?, ?)",
+                (guild_id, self.game, self.text_input.value)
+            )
             await db.commit()
-        await interaction.response.send_message(f"✅ DM text for '{self.game}' updated.", ephemeral=True)
+        await interaction.response.send_message(
+            f"✅ DM text for '{self.game}' updated for this server.",
+            ephemeral=True
+        )
 
 class EditDMView(discord.ui.View):
     def __init__(self, games):
@@ -960,8 +1002,9 @@ class EditDMView(discord.ui.View):
     guilds=GUILDS
 )
 @app_commands.check(admin_only)
-async def edit_dm(interaction):
-    games = await get_games()
+async def edit_dm(interaction: discord.Interaction):
+    guild_id = interaction.guild.id
+    games = await get_games(guild_id)  # ⚠️ 这里传入 guild_id
     if not games:
         await interaction.response.send_message("❌ No games found.", ephemeral=True)
         return
@@ -973,7 +1016,7 @@ async def edit_dm(interaction):
     )
 
 # =========================
-# 🎁 编辑未使用的礼品码
+# 🎁 编辑未使用的礼品码（按服务器隔离）
 # =========================
 class EditCodesModal(discord.ui.Modal, title="Edit Unused Codes"):
     codes_text = discord.ui.TextInput(
@@ -988,15 +1031,25 @@ class EditCodesModal(discord.ui.Modal, title="Edit Unused Codes"):
         self.game = game
 
     async def on_submit(self, interaction: discord.Interaction):
+        guild_id = interaction.guild.id  # ⚠️ 加上 guild_id
         new_codes = [line.strip() for line in self.codes_text.value.splitlines() if line.strip()]
         async with aiosqlite.connect(DB_PATH) as db:
-            # 删除该游戏所有未使用的代码
-            await db.execute("DELETE FROM codes WHERE game=? AND used=0", (self.game,))
+            # 删除该服务器该游戏所有未使用的代码
+            await db.execute(
+                "DELETE FROM codes WHERE guild_id=? AND game=? AND used=0",
+                (guild_id, self.game)
+            )
             # 插入新的代码
             for code in new_codes:
-                await db.execute("INSERT INTO codes (game, code) VALUES (?, ?)", (self.game, code))
+                await db.execute(
+                    "INSERT INTO codes (guild_id, game, code) VALUES (?, ?, ?)",
+                    (guild_id, self.game, code)
+                )
             await db.commit()
-        await interaction.response.send_message(f"✅ Updated {len(new_codes)} unused codes for **{self.game}**", ephemeral=True)
+        await interaction.response.send_message(
+            f"✅ Updated {len(new_codes)} unused codes for **{self.game}** in this server",
+            ephemeral=True
+        )
 
 class EditCodesSelect(discord.ui.Select):
     def __init__(self, games):
@@ -1005,12 +1058,16 @@ class EditCodesSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         game = self.values[0]
+        guild_id = interaction.guild.id
         async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT code FROM codes WHERE game=? AND used=0", (game,)) as c:
+            async with db.execute(
+                "SELECT code FROM codes WHERE guild_id=? AND game=? AND used=0",
+                (guild_id, game)
+            ) as c:
                 rows = await c.fetchall()
         codes_text = "\n".join(r[0] for r in rows)
         modal = EditCodesModal(game)
-        modal.codes_text.default = codes_text  # 将现有代码填充到 Modal
+        modal.codes_text.default = codes_text
         await interaction.response.send_modal(modal)
 
 class EditCodesView(discord.ui.View):
@@ -1026,11 +1083,16 @@ class EditCodesView(discord.ui.View):
 )
 @app_commands.check(admin_only)
 async def edit_codes(interaction: discord.Interaction):
-    games = await get_games()
+    guild_id = interaction.guild.id  # ⚠️ 传入当前服务器
+    games = await get_games(guild_id)
     if not games:
         await interaction.response.send_message("❌ No games added yet.", ephemeral=True)
         return
-    await interaction.response.send_message("Select a game to edit codes:", view=EditCodesView(games), ephemeral=True)
+    await interaction.response.send_message(
+        "Select a game to edit codes:",
+        view=EditCodesView(games),
+        ephemeral=True
+    )
 
 # =========================
 # 🆕 /hide_panel
@@ -1097,13 +1159,14 @@ async def unhide_panel(interaction: discord.Interaction):
 )
 @app_commands.check(admin_only)
 async def delete_game(interaction: discord.Interaction):
-    games = await get_games()
+    guild_id = interaction.guild.id  # ⚠️ 当前服务器 ID
+    games = await get_games(guild_id)  # ⚠️ 传入 guild_id 获取本服务器的游戏
     if not games:
         await interaction.response.send_message("❌ No games found.", ephemeral=True)
         return
 
     view = discord.ui.View()
-    view.add_item(DeleteGameSelect(games))
+    view.add_item(DeleteGameSelect(games, guild_id=guild_id))  # ⚠️ DeleteGameSelect 也要传 guild_id
 
     await interaction.response.send_message(
         "Select a game to delete:",
