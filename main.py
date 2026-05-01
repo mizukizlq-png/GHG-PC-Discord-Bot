@@ -164,18 +164,22 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
+        # 初始化数据库
         await init_db()
+        # 注册 persistent view
         self.add_view(StartView())
-        # 不在这里 sync guilds   
+
+        # 只同步指定服务器的 slash commands
+        for guild_id in GUILD_IDS:
+            guild = discord.Object(id=guild_id)
+            try:
+                synced = await self.tree.sync(guild=guild)
+                print(f"Synced {len(synced)} commands for guild {guild_id}")
+            except Exception as e:
+                print(f"Failed to sync commands for guild {guild_id}: {e}")
 
     async def on_ready(self):
         print(f"Bot ready: {self.user}")
-        for guild in self.guilds:  # bot.guilds 通常已经有缓存
-            try:
-                synced = await self.tree.sync(guild=guild)
-                print(f"Synced {len(synced)} commands for guild {guild.name} ({guild.id})")
-            except Exception as e:
-                print(f"Failed to sync commands for {guild.name}: {e}")
 
 # =========================
 # 🚀 创建 bot（必须在最后）
