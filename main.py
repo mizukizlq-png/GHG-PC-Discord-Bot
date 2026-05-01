@@ -1203,7 +1203,33 @@ async def unhide_panel(interaction: discord.Interaction):
     )
 
 # =========================
-# 🆕 /remove_game
+# 🆕 /remove_game Select 类
+# =========================
+class DeleteGameSelect(discord.ui.Select):
+    def __init__(self, games, guild_id: int):
+        super().__init__(placeholder="Select a game to delete", options=[discord.SelectOption(label=g) for g in games])
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        game = self.values[0]
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "DELETE FROM games WHERE guild_id=? AND name=?",
+                (self.guild_id, game)
+            )
+            await db.execute(
+                "DELETE FROM codes WHERE guild_id=? AND game=?",
+                (self.guild_id, game)
+            )
+            await db.commit()
+
+        await interaction.response.send_message(
+            f"✅ Game **{game}** deleted from this server.",
+            ephemeral=True
+        )
+
+# =========================
+# 🆕 /remove_game 命令
 # =========================
 @bot.tree.command(
     name="remove_game",
@@ -1212,15 +1238,14 @@ async def unhide_panel(interaction: discord.Interaction):
 )
 @app_commands.check(admin_only)
 async def delete_game(interaction: discord.Interaction):
-    guild_id = interaction.guild.id  # 当前服务器 ID
-    games = await get_games(guild_id)  # 只获取本服务器的游戏
+    guild_id = interaction.guild.id
+    games = await get_games(guild_id)
     if not games:
         await interaction.response.send_message("❌ No games found.", ephemeral=True)
         return
 
     view = discord.ui.View()
-    view.add_item(DeleteGameSelect(games, guild_id=guild_id))  # 传入 guild_id 保证删除操作只影响当前服务器
-
+    view.add_item(DeleteGameSelect(games, guild_id=guild_id))
     await interaction.response.send_message(
         "Select a game to delete:",
         view=view,
