@@ -191,7 +191,8 @@ bot = MyBot()
 # =========================
 @bot.tree.command(
     name="add_game",
-    description="Add a new game"
+    description="Add a new game",
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def add_game(interaction: discord.Interaction, name: str):
@@ -239,7 +240,8 @@ class UploadView(discord.ui.View):
 
 @bot.tree.command(
     name="upload",
-    description="Upload codes for a game"
+    description="Upload codes for a game",
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def upload(interaction: discord.Interaction):
@@ -262,7 +264,8 @@ async def upload(interaction: discord.Interaction):
 # =========================
 @bot.tree.command(
     name="stock",
-    description="Check stock of codes"
+    description="Check stock of codes",
+    guilds=GUILDS
 )
 async def stock(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -293,7 +296,8 @@ async def stock(interaction: discord.Interaction):
 # =========================
 @bot.tree.command(
     name="claim_history",
-    description="View claim history"
+    description="View claim history",
+    guilds=GUILDS
 )
 async def claim_history(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -318,7 +322,8 @@ from datetime import datetime
 
 @bot.tree.command(
     name="reset",
-    description="Reset all codes and claims (with backup)"
+    description="Reset all codes and claims (with backup)",
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def reset(interaction: discord.Interaction):
@@ -491,7 +496,8 @@ class GameSelect(discord.ui.Select):
 # =========================
 @bot.tree.command(
     name="post",
-    description="Post a new panel"
+    description="Post a new panel",
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def post(interaction: discord.Interaction):
@@ -650,7 +656,8 @@ class EditPostView(discord.ui.View):
 # =========================
 @bot.tree.command(
     name="edit_post",
-    description="Edit an existing panel"
+    description="Edit an existing panel",
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def edit_post(interaction: discord.Interaction):
@@ -800,7 +807,8 @@ class RemoveButtonView(discord.ui.View):
 # =========================
 @bot.tree.command(
     name="remove_button",
-    description="Remove buttons from a panel"
+    description="Remove buttons from a panel",
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def remove_button(interaction: discord.Interaction):
@@ -882,6 +890,7 @@ class RestoreButtonView(discord.ui.View):
 @bot.tree.command(
     name="restore_button",
     description="Restore buttons to a panel",
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def restore_button(interaction: discord.Interaction):
@@ -948,6 +957,7 @@ class EditDMView(discord.ui.View):
 @bot.tree.command(
     name="edit_dm",
     description="Edit DM text for a game",
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def edit_dm(interaction):
@@ -1012,6 +1022,7 @@ class EditCodesView(discord.ui.View):
 @bot.tree.command(
     name="edit_codes",
     description="Edit unused codes for a game",
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def edit_codes(interaction: discord.Interaction):
@@ -1027,6 +1038,7 @@ async def edit_codes(interaction: discord.Interaction):
 @bot.tree.command(
     name="hide_panel",
     description="Hide a panel from edit list",
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def hide_panel(interaction: discord.Interaction, message_id: str):
@@ -1049,6 +1061,7 @@ async def hide_panel(interaction: discord.Interaction, message_id: str):
 @bot.tree.command(
     name="unhide_panel",
     description="Restore hidden panels back to lists",
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def unhide_panel(interaction: discord.Interaction):
@@ -1080,6 +1093,7 @@ async def unhide_panel(interaction: discord.Interaction):
 @bot.tree.command(
     name="remove_game",
     description="Delete a game",
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def delete_game(interaction: discord.Interaction):
@@ -1103,6 +1117,7 @@ async def delete_game(interaction: discord.Interaction):
 @bot.tree.command(
     name="user_claim_records",
     description="Check user's claimed codes",
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def user_claim_records(interaction: discord.Interaction, user: discord.User):
