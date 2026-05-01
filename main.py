@@ -170,9 +170,12 @@ class MyBot(commands.Bot):
 
     async def on_ready(self):
         print(f"Bot ready: {self.user}")
-        for guild in self.guilds:
-            synced = await self.tree.sync(guild=guild)
-            print(f"Synced {len(synced)} commands for guild {guild.name} ({guild.id})")
+        for guild in self.guilds:  # bot.guilds 通常已经有缓存
+            try:
+                synced = await self.tree.sync(guild=guild)
+                print(f"Synced {len(synced)} commands for guild {guild.name} ({guild.id})")
+            except Exception as e:
+                print(f"Failed to sync commands for {guild.name}: {e}")
 
 # =========================
 # 🚀 创建 bot（必须在最后）
