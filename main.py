@@ -211,12 +211,16 @@ bot = MyBot()
 )
 @app_commands.check(admin_only)
 async def add_game(interaction: discord.Interaction, name: str):
+    guild_id = interaction.guild.id  # ⚡ 获取当前服务器 ID
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT OR IGNORE INTO games (name) VALUES (?)", (name,))
-        await db.commit()
+        await db.execute(
+            "INSERT OR IGNORE INTO games (guild_id, name) VALUES (?, ?)",
+            (guild_id, name)
+        )
+        await db.commit()  # 提交事务
 
     await interaction.response.send_message(
-        f"✅ Game added: {name}",
+        f"✅ Game added: {name} for this server.",
         ephemeral=True
     )
 
@@ -232,7 +236,6 @@ class UploadModal(discord.ui.Modal, title="Upload Game Codes"):
     )
 
     def __init__(self, guild_id: int, game: str):
-        super().__init__()
         self.guild_id = guild_id
         self.game = game
 
@@ -289,7 +292,7 @@ async def upload(interaction: discord.Interaction):
     )
 
 # =========================
-# 📦 /stock 显示未使用库存
+# 📦 /stock 显示未使用库存（按服务器隔离）
 # =========================
 @bot.tree.command(
     name="stock",
@@ -297,9 +300,10 @@ async def upload(interaction: discord.Interaction):
     guilds=GUILDS
 )
 async def stock(interaction: discord.Interaction):
-    guild_id = interaction.guild.id  # 当前服务器
+    guild_id = interaction.guild.id
+
     async with aiosqlite.connect(DB_PATH) as db:
-        # 获取本服务器的游戏列表
+        # 查询该服务器的游戏列表
         async with db.execute("SELECT name FROM games WHERE guild_id=?", (guild_id,)) as c:
             games = await c.fetchall()
 
@@ -312,6 +316,7 @@ async def stock(interaction: discord.Interaction):
 
         msg = "📦 Stock (unused codes) for this server:\n"
 
+        # 查询每个游戏的库存
         for g, in games:
             async with db.execute(
                 "SELECT COUNT(*) FROM codes WHERE guild_id=? AND game=? AND used=0",
@@ -323,7 +328,7 @@ async def stock(interaction: discord.Interaction):
     await interaction.response.send_message(msg, ephemeral=True)
 
 # =========================
-# 📊 /claim_history 显示已领取记录
+# 📊 /claim_history 显示已领取记录（按服务器隔离）
 # =========================
 @bot.tree.command(
     name="claim_history",
@@ -331,21 +336,27 @@ async def stock(interaction: discord.Interaction):
     guilds=GUILDS
 )
 async def claim_history(interaction: discord.Interaction):
+    guild_id = interaction.guild.id
+
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT game, COUNT(*) FROM claims GROUP BY game") as c:
+        # 查询该服务器领取记录
+        async with db.execute(
+            "SELECT game, COUNT(*) FROM claims WHERE guild_id=? GROUP BY game",
+            (guild_id,)
+        ) as c:
             rows = await c.fetchall()
 
     if not rows:
-        msg = "📊 No claims yet."
+        msg = "📊 No claims yet for this server."
     else:
-        msg = "📊 Claims (codes successfully sent via DM):\n"
+        msg = "📊 Claims (codes successfully sent via DM) for this server:\n"
         for g, c_count in rows:
             msg += f"{g}: {c_count}\n"
 
     await interaction.response.send_message(msg, ephemeral=True)
 
 # =========================
-# ♻️ /reset（CSV + 统计版）
+# ♻️ /reset（CSV + 统计版，按服务器隔离）
 # =========================
 import io
 import csv
@@ -353,20 +364,28 @@ from datetime import datetime
 
 @bot.tree.command(
     name="reset",
-    description="Reset all codes and claims (with backup)",
+    description="Reset all codes and claims (with backup, this server only)",
     guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def reset(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
 
+    guild_id = interaction.guild.id
+
     # ===== 读取领取记录 =====
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT user_id, game, code FROM claims") as c:
+        async with db.execute(
+            "SELECT user_id, game, code FROM claims WHERE guild_id=?",
+            (guild_id,)
+        ) as c:
             rows = await c.fetchall()
 
-        # 👉 同时统计每个游戏领取人数
-        async with db.execute("SELECT game, COUNT(*) FROM claims GROUP BY game") as c2:
+        # 同时统计每个游戏领取人数
+        async with db.execute(
+            "SELECT game, COUNT(*) FROM claims WHERE guild_id=? GROUP BY game",
+            (guild_id,)
+        ) as c2:
             stats = await c2.fetchall()
 
     # ===== 生成 CSV =====
@@ -374,19 +393,15 @@ async def reset(interaction: discord.Interaction):
         output = io.StringIO()
         writer = csv.writer(output)
 
-        # 空行分隔
         writer.writerow([])
         writer.writerow(["--- Summary ---"])
-
-        # ===== 统计 =====
         writer.writerow(["Game", "ClaimCount"])
         for game, count in stats:
             writer.writerow([game, count])
 
         file_content = output.getvalue()
-
         file = discord.File(
-            fp=io.BytesIO(file_content.encode("utf-8-sig")),  # 防乱码
+            fp=io.BytesIO(file_content.encode("utf-8-sig")),
             filename=f"claim_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         )
     else:
@@ -394,20 +409,20 @@ async def reset(interaction: discord.Interaction):
 
     # ===== 执行重置 =====
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM claims")
-        await db.execute("DELETE FROM codes")
+        await db.execute("DELETE FROM claims WHERE guild_id=?", (guild_id,))
+        await db.execute("DELETE FROM codes WHERE guild_id=?", (guild_id,))
         await db.commit()
 
     # ===== 返回结果 =====
     if file:
         await interaction.followup.send(
-            content="♻️ Reset completed. CSV backup with stats attached.",
+            content="♻️ Reset completed for this server. CSV backup with stats attached.",
             file=file,
             ephemeral=True
         )
     else:
         await interaction.followup.send(
-            "♻️ Reset completed. No claim history to backup.",
+            "♻️ Reset completed for this server. No claim history to backup.",
             ephemeral=True
         )
 
@@ -422,8 +437,8 @@ async def handle_claim(interaction, game):
 
         # 1️⃣ 防重复领取
         async with db.execute(
-            "SELECT 1 FROM claims WHERE user_id=? AND game=?",
-            (user.id, game)
+            "SELECT 1 FROM claims WHERE guild_id=? AND user_id=? AND game=?",
+            (interaction.guild.id, user.id, game)
         ) as c:
             if await c.fetchone():
                 await db.rollback()
@@ -438,10 +453,10 @@ async def handle_claim(interaction, game):
             """
             SELECT id, code
             FROM codes
-            WHERE game=? AND used=0
+            WHERE guild_id=? AND game=? AND used=0
             LIMIT 1
             """,
-            (game,)
+            (interaction.guild.id, game)
         ) as c:
             row = await c.fetchone()
 
@@ -462,8 +477,8 @@ async def handle_claim(interaction, game):
         )
 
         await db.execute(
-            "INSERT INTO claims (user_id, game, code) VALUES (?, ?, ?)",
-            (user.id, game, code)
+            "INSERT INTO claims (guild_id, user_id, game, code) VALUES (?, ?, ?, ?)",
+            (interaction.guild.id, user.id, game, code)
         )
 
         await db.commit()
@@ -471,8 +486,8 @@ async def handle_claim(interaction, game):
     # ===== DM =====
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT text FROM dm_text WHERE game=?",
-            (game,)
+            "SELECT text FROM dm_text WHERE guild_id=? AND game=?",
+            (interaction.guild.id, game)
         ) as c:
             row = await c.fetchone()
 
@@ -491,8 +506,8 @@ async def handle_claim(interaction, game):
                 (code_id,)
             )
             await db.execute(
-                "DELETE FROM claims WHERE user_id=? AND game=?",
-                (user.id, game)
+                "DELETE FROM claims WHERE guild_id=? AND user_id=? AND game=?",
+                (interaction.guild.id, user.id, game)
             )
             await db.commit()
 
@@ -1104,16 +1119,17 @@ async def edit_codes(interaction: discord.Interaction):
 )
 @app_commands.check(admin_only)
 async def hide_panel(interaction: discord.Interaction, message_id: str):
+    guild_id = interaction.guild.id  # 当前服务器 ID
 
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "UPDATE panel SET hidden=1 WHERE message_id=?",
-            (message_id,)
+            "UPDATE panel SET hidden=1 WHERE guild_id=? AND message_id=?",
+            (guild_id, message_id)
         )
         await db.commit()
 
     await interaction.response.send_message(
-        "✅ Panel hidden (not deleted).",
+        "✅ Panel hidden (not deleted) for this server.",
         ephemeral=True
     )
 
@@ -1127,16 +1143,18 @@ async def hide_panel(interaction: discord.Interaction, message_id: str):
 )
 @app_commands.check(admin_only)
 async def unhide_panel(interaction: discord.Interaction):
+    guild_id = interaction.guild.id  # 当前服务器 ID
 
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT title, message_id, channel_id FROM panel WHERE hidden=1"
+            "SELECT title, message_id, channel_id FROM panel WHERE hidden=1 AND guild_id=?",
+            (guild_id,)
         ) as c:
             panels = await c.fetchall()
 
     if not panels:
         await interaction.response.send_message(
-            "❌ No hidden panels found.",
+            "❌ No hidden panels found for this server.",
             ephemeral=True
         )
         return
@@ -1159,14 +1177,14 @@ async def unhide_panel(interaction: discord.Interaction):
 )
 @app_commands.check(admin_only)
 async def delete_game(interaction: discord.Interaction):
-    guild_id = interaction.guild.id  # ⚠️ 当前服务器 ID
-    games = await get_games(guild_id)  # ⚠️ 传入 guild_id 获取本服务器的游戏
+    guild_id = interaction.guild.id  # 当前服务器 ID
+    games = await get_games(guild_id)  # 只获取本服务器的游戏
     if not games:
         await interaction.response.send_message("❌ No games found.", ephemeral=True)
         return
 
     view = discord.ui.View()
-    view.add_item(DeleteGameSelect(games, guild_id=guild_id))  # ⚠️ DeleteGameSelect 也要传 guild_id
+    view.add_item(DeleteGameSelect(games, guild_id=guild_id))  # 传入 guild_id 保证删除操作只影响当前服务器
 
     await interaction.response.send_message(
         "Select a game to delete:",
@@ -1184,22 +1202,23 @@ async def delete_game(interaction: discord.Interaction):
 )
 @app_commands.check(admin_only)
 async def user_claim_records(interaction: discord.Interaction, user: discord.User):
+    guild_id = interaction.guild.id  # 当前服务器
 
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT game, code FROM claims WHERE user_id=?",
-            (user.id,)
+            "SELECT game, code FROM claims WHERE guild_id=? AND user_id=?",
+            (guild_id, user.id)
         ) as c:
             rows = await c.fetchall()
 
     if not rows:
         await interaction.response.send_message(
-            f"❌ {user.display_name} has no claimed codes.",
+            f"❌ {user.display_name} has no claimed codes in this server.",
             ephemeral=True
         )
         return
 
-    msg = f"📊 {user.display_name}'s claimed codes:\n" + "".join(
+    msg = f"📊 {user.display_name}'s claimed codes in this server:\n" + "".join(
         f"{g}: {c}\n" for g, c in rows
     )
 
