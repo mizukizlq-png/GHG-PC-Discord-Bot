@@ -8,7 +8,6 @@ import os
 # ⚙️ 配置
 # =========================
 TOKEN = os.getenv("DISCORD_TOKEN")
-print("TOKEN =", TOKEN)
 GUILD_IDS = [
     801376018853134366,
     1087583384961830912,
@@ -168,25 +167,18 @@ class MyBot(commands.Bot):
             intents=intents
         )
 
+    # setup_hook 必须是类方法
     async def setup_hook(self):
-
-        # =========================
-        # 🧱 初始化数据库
-        # =========================
+        # 初始化数据库
         await init_db()
 
-        # =========================
-        # 🧠 注册 persistent view
-        # =========================
+        # 注册 persistent view
         self.add_view(StartView())
 
-        # =========================
-        # 📡 同步 slash commands（指定服务器）
-        # =========================
-        for guild_id in GUILD_IDS:
-            guild = discord.Object(id=guild_id)
+        # 只同步 Bot 当前加入的服务器
+        for guild in self.guilds:
             synced = await self.tree.sync(guild=guild)
-            print(f"Synced {len(synced)} commands for guild {guild_id}")
+            print(f"Synced {len(synced)} commands for guild {guild.name} ({guild.id})")
 
 
 # =========================
