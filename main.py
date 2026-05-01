@@ -8,6 +8,7 @@ import os
 # ⚙️ 配置
 # =========================
 TOKEN = os.getenv("DISCORD_TOKEN")
+print("TOKEN =", TOKEN)
 GUILD_IDS = [
     801376018853134366,
     1087583384961830912,
