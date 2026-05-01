@@ -8,10 +8,16 @@ import os
 # ⚙️ 配置
 # =========================
 TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_ID = 801376018853134366
-DB_PATH = "bot.db"
+GUILD_IDS = [
+    801376018853134366,
+    1087583384961830912,
+    1274981048165335062,
+    993734456550629396,
+    1004674961060933672,
+]
 
-GUILD = discord.Object(id=GUILD_ID)
+GUILDS = [discord.Object(id=g) for g in GUILD_IDS]
+DB_PATH = "bot.db"
 
 # =========================
 # 🧱 数据库初始化（修正版）
@@ -154,7 +160,7 @@ class MyBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.guilds = True
-        intents.message_content = True  # 可选但建议加
+        intents.message_content = True
 
         super().__init__(
             command_prefix="!",
@@ -174,27 +180,36 @@ class MyBot(commands.Bot):
         self.add_view(StartView())
 
         # =========================
-        # 📡 同步 slash commands
+        # 📡 同步 slash commands（指定服务器）
         # =========================
-        synced = await self.tree.sync(guild=GUILD)
+        for guild_id in GUILD_IDS:
+            guild = discord.Object(id=guild_id)
+            synced = await self.tree.sync(guild=guild)
+            print(f"Synced {len(synced)} commands for guild {guild_id}")
 
-        print(f"Synced {len(synced)} commands")
 
-    async def interaction_check(self, interaction: discord.Interaction):
-        return interaction.guild_id == GUILD_ID
-
+# =========================
+# 🚀 创建 bot（必须在最后）
+# =========================
 bot = MyBot()
 
 # =========================
 # 🆕 /add_game
 # =========================
-@bot.tree.command(name="add_game", description="Add a new game", guild=GUILD)
+@bot.tree.command(
+    name="add_game",
+    description="Add a new game"
+)
 @app_commands.check(admin_only)
 async def add_game(interaction: discord.Interaction, name: str):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("INSERT OR IGNORE INTO games (name) VALUES (?)", (name,))
         await db.commit()
-    await interaction.response.send_message(f"✅ Game added: {name}", ephemeral=True)
+
+    await interaction.response.send_message(
+        f"✅ Game added: {name}",
+        ephemeral=True
+    )
 
 # =========================
 # 🎁 上传礼品码
@@ -229,30 +244,52 @@ class UploadView(discord.ui.View):
         super().__init__(timeout=60)
         self.add_item(UploadSelect(games))
 
-@bot.tree.command(name="upload", description="Upload codes for a game", guild=GUILD)
+@bot.tree.command(
+    name="upload",
+    description="Upload codes for a game"
+)
 @app_commands.check(admin_only)
 async def upload(interaction: discord.Interaction):
     games = await get_games()
     if not games:
-        await interaction.response.send_message("❌ No games added yet.", ephemeral=True)
+        await interaction.response.send_message(
+            "❌ No games added yet.",
+            ephemeral=True
+        )
         return
-    await interaction.response.send_message("Select a game to upload codes:", view=UploadView(games), ephemeral=True)
+
+    await interaction.response.send_message(
+        "Select a game to upload codes:",
+        view=UploadView(games),
+        ephemeral=True
+    )
 
 # =========================
 # 📦 /stock 显示未使用库存
 # =========================
-@bot.tree.command(name="stock", description="Check stock of codes", guild=GUILD)
+@bot.tree.command(
+    name="stock",
+    description="Check stock of codes"
+)
 async def stock(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT name FROM games") as c:
             games = await c.fetchall()
+
         if not games:
-            await interaction.response.send_message("📦 No games found.", ephemeral=True)
+            await interaction.response.send_message(
+                "📦 No games found.",
+                ephemeral=True
+            )
             return
 
         msg = "📦 Stock (unused codes):\n"
+
         for g, in games:
-            async with db.execute("SELECT COUNT(*) FROM codes WHERE game=? AND used=0", (g,)) as c2:
+            async with db.execute(
+                "SELECT COUNT(*) FROM codes WHERE game=? AND used=0",
+                (g,)
+            ) as c2:
                 count = (await c2.fetchone())[0]
             msg += f"{g}: {count}\n"
 
@@ -261,7 +298,10 @@ async def stock(interaction: discord.Interaction):
 # =========================
 # 📊 /claim_history 显示已领取记录
 # =========================
-@bot.tree.command(name="claim_history", description="View claim history", guild=GUILD)
+@bot.tree.command(
+    name="claim_history",
+    description="View claim history"
+)
 async def claim_history(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT game, COUNT(*) FROM claims GROUP BY game") as c:
@@ -283,7 +323,10 @@ import io
 import csv
 from datetime import datetime
 
-@bot.tree.command(name="reset", description="Reset all codes and claims (with backup)", guild=GUILD)
+@bot.tree.command(
+    name="reset",
+    description="Reset all codes and claims (with backup)"
+)
 @app_commands.check(admin_only)
 async def reset(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -453,7 +496,10 @@ class GameSelect(discord.ui.Select):
 # =========================
 # 📝 /post
 # =========================
-@bot.tree.command(name="post", description="Post a new panel", guild=GUILD)
+@bot.tree.command(
+    name="post",
+    description="Post a new panel"
+)
 @app_commands.check(admin_only)
 async def post(interaction: discord.Interaction):
     await interaction.response.send_modal(PostModal())
@@ -609,7 +655,10 @@ class EditPostView(discord.ui.View):
 # =========================
 # 4️⃣ COMMAND
 # =========================
-@bot.tree.command(name="edit_post", description="Edit an existing panel", guild=GUILD)
+@bot.tree.command(
+    name="edit_post",
+    description="Edit an existing panel"
+)
 @app_commands.check(admin_only)
 async def edit_post(interaction: discord.Interaction):
 
@@ -620,7 +669,10 @@ async def edit_post(interaction: discord.Interaction):
             panels = await c.fetchall()
 
     if not panels:
-        await interaction.response.send_message("❌ No panels found.", ephemeral=True)
+        await interaction.response.send_message(
+            "❌ No panels found.",
+            ephemeral=True
+        )
         return
 
     await interaction.response.send_message(
@@ -628,22 +680,6 @@ async def edit_post(interaction: discord.Interaction):
         view=EditPostView(panels),
         ephemeral=True
     )
-
-async def callback(self, interaction: discord.Interaction):
-
-    message_id = int(self.values[0])
-
-    if str(message_id) not in self.panels:
-        await interaction.response.send_message(
-            "❌ Panel not found",
-            ephemeral=True
-        )
-        return
-
-    title, channel_id = self.panels[str(message_id)]
-
-    channel = await interaction.client.fetch_channel(channel_id)
-    msg = await channel.fetch_message(message_id)
 
     async with aiosqlite.connect(DB_PATH) as db:
 
@@ -771,8 +807,7 @@ class RemoveButtonView(discord.ui.View):
 # =========================
 @bot.tree.command(
     name="remove_button",
-    description="Remove buttons from a panel",
-    guild=GUILD
+    description="Remove buttons from a panel"
 )
 @app_commands.check(admin_only)
 async def remove_button(interaction: discord.Interaction):
@@ -784,7 +819,10 @@ async def remove_button(interaction: discord.Interaction):
             panels = await c.fetchall()
 
     if not panels:
-        await interaction.response.send_message("❌ No panels", ephemeral=True)
+        await interaction.response.send_message(
+            "❌ No panels",
+            ephemeral=True
+        )
         return
 
     await interaction.response.send_message(
@@ -848,21 +886,16 @@ class RestoreButtonView(discord.ui.View):
         super().__init__(timeout=60)
         self.add_item(RestoreButtonSelect(panels))
 
-# =========================
-# /restore_button
-# =========================
-
 @bot.tree.command(
     name="restore_button",
     description="Restore buttons to a panel",
-    guild=GUILD
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def restore_button(interaction: discord.Interaction):
 
     async with aiosqlite.connect(DB_PATH) as db:
 
-        # 👉 改成从 panel 取，而不是 panel_buttons
         async with db.execute("""
             SELECT title, message_id, channel_id
             FROM panel
@@ -920,14 +953,23 @@ class EditDMView(discord.ui.View):
         super().__init__(timeout=60)
         self.add_item(EditDMSelect(games))
 
-@bot.tree.command(name="edit_dm", description="Edit DM text for a game", guild=GUILD)
+@bot.tree.command(
+    name="edit_dm",
+    description="Edit DM text for a game",
+    guilds=GUILDS
+)
 @app_commands.check(admin_only)
 async def edit_dm(interaction):
     games = await get_games()
     if not games:
         await interaction.response.send_message("❌ No games found.", ephemeral=True)
         return
-    await interaction.response.send_message("Select a game to edit DM text:", view=EditDMView(games), ephemeral=True)
+
+    await interaction.response.send_message(
+        "Select a game to edit DM text:",
+        view=EditDMView(games),
+        ephemeral=True
+    )
 
 # =========================
 # 🎁 编辑未使用的礼品码
@@ -976,7 +1018,11 @@ class EditCodesView(discord.ui.View):
         self.add_item(EditCodesSelect(games))
 
 
-@bot.tree.command(name="edit_codes", description="Edit unused codes for a game", guild=GUILD)
+@bot.tree.command(
+    name="edit_codes",
+    description="Edit unused codes for a game",
+    guilds=GUILDS
+)
 @app_commands.check(admin_only)
 async def edit_codes(interaction: discord.Interaction):
     games = await get_games()
@@ -991,7 +1037,7 @@ async def edit_codes(interaction: discord.Interaction):
 @bot.tree.command(
     name="hide_panel",
     description="Hide a panel from edit list",
-    guild=GUILD
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def hide_panel(interaction: discord.Interaction, message_id: str):
@@ -1011,42 +1057,10 @@ async def hide_panel(interaction: discord.Interaction, message_id: str):
 # =========================
 # 🆕 /unhide_panel
 # =========================
-class UnhidePanelSelect(discord.ui.Select):
-    def __init__(self, panels):
-        options = [
-            discord.SelectOption(label=p[0], value=str(p[1]))
-            for p in panels
-        ]
-
-        super().__init__(
-            placeholder="Select panel to unhide",
-            options=options
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        message_id = self.values[0]
-
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE panel SET hidden=0 WHERE message_id=?",
-                (message_id,)
-            )
-            await db.commit()
-
-        await interaction.response.send_message(
-            "✅ Panel restored.",
-            ephemeral=True
-        )
-
-class UnhidePanelView(discord.ui.View):
-    def __init__(self, panels):
-        super().__init__(timeout=60)
-        self.add_item(UnhidePanelSelect(panels))
-
 @bot.tree.command(
     name="unhide_panel",
     description="Restore hidden panels back to lists",
-    guild=GUILD
+    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def unhide_panel(interaction: discord.Interaction):
@@ -1075,44 +1089,56 @@ async def unhide_panel(interaction: discord.Interaction):
 # =========================
 # 🆕 /remove_game
 # =========================
-class DeleteGameSelect(discord.ui.Select):
-    def __init__(self, games):
-        options = [discord.SelectOption(label=g) for g in games]
-        super().__init__(placeholder="Select a game to delete", options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        game = self.values[0]
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("DELETE FROM games WHERE name=?", (game,))
-            await db.execute("DELETE FROM codes WHERE game=?", (game,))
-            await db.execute("DELETE FROM claims WHERE game=?", (game,))
-            await db.commit()
-        await interaction.response.send_message(f"✅ Game '{game}' deleted.", ephemeral=True)
-
-@bot.tree.command(name="remove_game", description="Delete a game", guild=GUILD)
+@bot.tree.command(
+    name="remove_game",
+    description="Delete a game",
+    guilds=GUILDS
+)
 @app_commands.check(admin_only)
 async def delete_game(interaction: discord.Interaction):
     games = await get_games()
     if not games:
         await interaction.response.send_message("❌ No games found.", ephemeral=True)
         return
+
     view = discord.ui.View()
     view.add_item(DeleteGameSelect(games))
-    await interaction.response.send_message("Select a game to delete:", view=view, ephemeral=True)
+
+    await interaction.response.send_message(
+        "Select a game to delete:",
+        view=view,
+        ephemeral=True
+    )
 
 # =========================
 # 🆕 /user_claim_records
 # =========================
-@bot.tree.command(name="user_claim_records", description="Check user's claimed codes", guild=GUILD)
+@bot.tree.command(
+    name="user_claim_records",
+    description="Check user's claimed codes",
+    guilds=GUILDS
+)
 @app_commands.check(admin_only)
 async def user_claim_records(interaction: discord.Interaction, user: discord.User):
+
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT game, code FROM claims WHERE user_id=?", (user.id,)) as c:
+        async with db.execute(
+            "SELECT game, code FROM claims WHERE user_id=?",
+            (user.id,)
+        ) as c:
             rows = await c.fetchall()
+
     if not rows:
-        await interaction.response.send_message(f"❌ {user.display_name} has no claimed codes.", ephemeral=True)
+        await interaction.response.send_message(
+            f"❌ {user.display_name} has no claimed codes.",
+            ephemeral=True
+        )
         return
-    msg = f"📊 {user.display_name}'s claimed codes:\n" + "".join(f"{g}: {c}\n" for g, c in rows)
+
+    msg = f"📊 {user.display_name}'s claimed codes:\n" + "".join(
+        f"{g}: {c}\n" for g, c in rows
+    )
+
     await interaction.response.send_message(msg, ephemeral=True)
 
 # =========================
