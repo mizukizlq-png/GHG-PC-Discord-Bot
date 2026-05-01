@@ -882,7 +882,6 @@ class RestoreButtonView(discord.ui.View):
 @bot.tree.command(
     name="restore_button",
     description="Restore buttons to a panel",
-    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def restore_button(interaction: discord.Interaction):
@@ -949,7 +948,6 @@ class EditDMView(discord.ui.View):
 @bot.tree.command(
     name="edit_dm",
     description="Edit DM text for a game",
-    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def edit_dm(interaction):
@@ -1014,7 +1012,6 @@ class EditCodesView(discord.ui.View):
 @bot.tree.command(
     name="edit_codes",
     description="Edit unused codes for a game",
-    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def edit_codes(interaction: discord.Interaction):
@@ -1030,7 +1027,6 @@ async def edit_codes(interaction: discord.Interaction):
 @bot.tree.command(
     name="hide_panel",
     description="Hide a panel from edit list",
-    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def hide_panel(interaction: discord.Interaction, message_id: str):
@@ -1053,7 +1049,6 @@ async def hide_panel(interaction: discord.Interaction, message_id: str):
 @bot.tree.command(
     name="unhide_panel",
     description="Restore hidden panels back to lists",
-    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def unhide_panel(interaction: discord.Interaction):
@@ -1085,7 +1080,6 @@ async def unhide_panel(interaction: discord.Interaction):
 @bot.tree.command(
     name="remove_game",
     description="Delete a game",
-    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def delete_game(interaction: discord.Interaction):
@@ -1109,7 +1103,6 @@ async def delete_game(interaction: discord.Interaction):
 @bot.tree.command(
     name="user_claim_records",
     description="Check user's claimed codes",
-    guilds=GUILDS
 )
 @app_commands.check(admin_only)
 async def user_claim_records(interaction: discord.Interaction, user: discord.User):
