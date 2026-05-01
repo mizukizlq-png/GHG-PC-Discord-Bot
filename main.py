@@ -236,6 +236,7 @@ class UploadModal(discord.ui.Modal, title="Upload Game Codes"):
     )
 
     def __init__(self, guild_id: int, game: str):
+        super().__init__(custom_id=f"upload_modal_{guild_id}_{game}")
         self.guild_id = guild_id
         self.game = game
 
@@ -554,16 +555,24 @@ async def post(interaction: discord.Interaction):
 # =========================
 class PostModal(discord.ui.Modal, title="Post New Panel"):
 
-    title_text = discord.ui.TextInput(label="Admin Title", required=True)
-    image_url = discord.ui.TextInput(label="Image URL", required=False)
-    content_text = discord.ui.TextInput(
-        label="Message Content",
-        style=discord.TextStyle.paragraph,
-        required=True
-    )
+    def __init__(self):
+        super().__init__(custom_id="post_modal")
+
+        # 创建 TextInput
+        self.title_text = discord.ui.TextInput(label="Admin Title", required=True)
+        self.image_url = discord.ui.TextInput(label="Image URL", required=False)
+        self.content_text = discord.ui.TextInput(
+            label="Message Content",
+            style=discord.TextStyle.paragraph,
+            required=True
+        )
+
+        # ⚠️ 必须加这一步
+        self.add_item(self.title_text)
+        self.add_item(self.image_url)
+        self.add_item(self.content_text)
 
     async def on_submit(self, interaction: discord.Interaction):
-
         embed = discord.Embed(description=self.content_text.value)
 
         if self.image_url.value:
@@ -622,16 +631,31 @@ class PostModal(discord.ui.Modal, title="Post New Panel"):
 # 1️⃣ MODAL（必须最上面）
 # =========================
 class EditPostModal(discord.ui.Modal, title="Edit Panel"):
-    image_url = discord.ui.TextInput(label="Image URL", required=False)
-    content_text = discord.ui.TextInput(label="Message Content", style=discord.TextStyle.paragraph, required=True)
-
     def __init__(self, title, message_id, channel_id, old_content, old_url):
-        super().__init__()
+        # ⚠️ 给 Modal 设置 custom_id 保证唯一
+        super().__init__(custom_id=f"edit_post_modal_{message_id}")
+
         self.title = title
         self.message_id = message_id
         self.channel_id = channel_id
-        self.content_text.default = old_content
-        self.image_url.default = old_url
+
+        # 每个实例都新建 TextInput
+        self.content_text = discord.ui.TextInput(
+            label="Message Content",
+            style=discord.TextStyle.paragraph,
+            required=True,
+            default=old_content
+        )
+
+        self.image_url = discord.ui.TextInput(
+            label="Image URL",
+            required=False,
+            default=old_url
+        )
+
+        # 添加到 Modal
+        self.add_item(self.content_text)
+        self.add_item(self.image_url)
 
     async def on_submit(self, interaction: discord.Interaction):
         channel = interaction.client.get_channel(self.channel_id)
@@ -986,12 +1010,23 @@ class EditDMSelect(discord.ui.Select):
         await interaction.response.send_modal(EditDMModal(game, old_text))
 
 class EditDMModal(discord.ui.Modal, title="Edit DM Text"):
-    text_input = discord.ui.TextInput(label="DM Text", style=discord.TextStyle.paragraph, required=True, max_length=2000)
-
     def __init__(self, game, old_text):
-        super().__init__()
+        # ⚠️ 给每个 Modal 一个唯一 custom_id
+        super().__init__(custom_id=f"edit_dm_modal_{game}")
+
         self.game = game
-        self.text_input.default = old_text
+
+        # 创建实例化的 TextInput
+        self.text_input = discord.ui.TextInput(
+            label="DM Text",
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=2000,
+            default=old_text
+        )
+
+        # 添加到 Modal
+        self.add_item(self.text_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
