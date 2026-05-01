@@ -161,25 +161,18 @@ class MyBot(commands.Bot):
         intents = discord.Intents.default()
         intents.guilds = True
         intents.message_content = True
+        super().__init__(command_prefix="!", intents=intents)
 
-        super().__init__(
-            command_prefix="!",
-            intents=intents
-        )
-
-    # setup_hook 必须是类方法
     async def setup_hook(self):
-        # 初始化数据库
         await init_db()
-
-        # 注册 persistent view
         self.add_view(StartView())
+        # 不在这里 sync guilds   
 
-        # 只同步 Bot 当前加入的服务器
+    async def on_ready(self):
+        print(f"Bot ready: {self.user}")
         for guild in self.guilds:
             synced = await self.tree.sync(guild=guild)
             print(f"Synced {len(synced)} commands for guild {guild.name} ({guild.id})")
-
 
 # =========================
 # 🚀 创建 bot（必须在最后）
